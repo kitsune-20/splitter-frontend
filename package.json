@@ -71,6 +71,7 @@
     "@types/yargs": "^17.0.33",
     "@types/yargs-parser": "^21.0.3",
     "babel-preset-expo": "~54.0.0",
+    "react-native-make": "^1.0.1",
     "typescript": "~5.9.2"
   },
   "overrides": {
