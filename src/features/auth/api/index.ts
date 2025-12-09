@@ -1,5 +1,6 @@
 import axios, { AxiosError } from 'axios';
 import { getToken } from '@/shared/lib/utils/token-storage';
+import { emitUnauthorized } from '@/shared/api/auth-events';
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
 export const apiClient = axios.create({
@@ -66,6 +67,7 @@ apiClient.interceptors.response.use(
 
       switch (status) {
         case 401:
+          emitUnauthorized();
           throw new Error(serverMsg || 'Authorization failed');
         case 422:
           throw new Error(serverMsg || 'Validation error');

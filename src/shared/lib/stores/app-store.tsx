@@ -116,13 +116,25 @@ export const useAppStore = create<AppStore>()(
 
 // Provider component for initialization
 import { ReactNode, useEffect } from 'react';
+import { useRouter } from 'expo-router';
+import { onUnauthorized } from '@/shared/api/auth-events';
 
 export function AppStoreProvider({ children }: { children: ReactNode }) {
   const initializeAuth = useAppStore((s) => s.initializeAuth);
+  const logout = useAppStore((s) => s.logout);
+  const router = useRouter();
   
   useEffect(() => {
     initializeAuth();
   }, []);
+
+  useEffect(() => {
+    const unsubscribe = onUnauthorized(async () => {
+      await logout();
+      router.replace('/');
+    });
+    return unsubscribe;
+  }, [logout, router]);
   
   return <>{children}</>;
 }
