@@ -2,11 +2,14 @@
 import type {
   FinalizeReceiptResponse,
   FinalizeReceiptItemPayload,
+  FinalizeTotalsByItem,
+  FinalizeTotalsByParticipant,
   ParseReceiptRequest,
   ParseReceiptResponse,
   ReceiptParticipant,
   ReceiptSummary,
   ReceiptSplitMode,
+  ReceiptAllocation,
 } from '@/features/receipt/api/receipt.api';
 import { ReceiptApi } from '@/features/receipt/api/receipt.api';
 
@@ -37,6 +40,21 @@ export interface ReceiptSessionMeta {
   summary?: ReceiptSummary;
 }
 
+export type FinishPayload = {
+  sessionId?: number;
+  sessionName?: string;
+  receiptId?: string;
+  participants?: ReceiptParticipant[];
+  totals?: Record<string, number>;
+  totalsByParticipant?: FinalizeTotalsByParticipant[];
+  totalsByItem?: FinalizeTotalsByItem[];
+  allocations?: ReceiptAllocation[];
+  status?: string;
+  createdAt?: string;
+  grandTotal?: number;
+  currency?: string;
+};
+
 interface ReceiptSessionStore {
   capture?: CapturedReceiptImage;
   parsing: boolean;
@@ -48,6 +66,7 @@ interface ReceiptSessionStore {
   finalizing: boolean;
   finalizeError?: string;
   finalized?: FinalizeReceiptResponse;
+  lastFinishPayload?: FinishPayload;
 
   setCapture: (capture?: CapturedReceiptImage) => void;
   clearCapture: () => void;
@@ -56,6 +75,7 @@ interface ReceiptSessionStore {
   setCurrency: (currency: string) => void; // ✅ Добавлен метод
   updateItem: (itemId: string, updater: (prev: ReceiptSplitItem) => ReceiptSplitItem) => void;
   setItems: (items: ReceiptSplitItem[]) => void;
+  setLastFinishPayload: (payload?: FinishPayload) => void;
 
   parseReceipt: (payload: ParseReceiptRequest) => Promise<ParseReceiptResponse>;
   finalizeSession: () => Promise<FinalizeReceiptResponse>;
@@ -63,7 +83,7 @@ interface ReceiptSessionStore {
 }
 
 const INITIAL_STATE: Pick<ReceiptSessionStore,
-  'capture' | 'parsing' | 'parseError' | 'session' | 'items' | 'participants' | 'currency' | 'finalizing' | 'finalizeError' | 'finalized'
+  'capture' | 'parsing' | 'parseError' | 'session' | 'items' | 'participants' | 'currency' | 'finalizing' | 'finalizeError' | 'finalized' | 'lastFinishPayload'
 > = {
   capture: undefined,
   parsing: false,
@@ -75,6 +95,7 @@ const INITIAL_STATE: Pick<ReceiptSessionStore,
   finalizing: false,
   finalizeError: undefined,
   finalized: undefined,
+  lastFinishPayload: undefined,
 };
 
 export const useReceiptSessionStore = create<ReceiptSessionStore>((set, get) => ({
@@ -101,6 +122,7 @@ export const useReceiptSessionStore = create<ReceiptSessionStore>((set, get) => 
   },
 
   setItems: (items) => set({ items }),
+  setLastFinishPayload: (payload) => set({ lastFinishPayload: payload }),
 
   parseReceipt: async (payload) => {
     set({ parsing: true, parseError: undefined });
@@ -171,11 +193,29 @@ export const useReceiptSessionStore = create<ReceiptSessionStore>((set, get) => 
         currency,
       });
 
-       if (response.totals?.currency) {
-      set({ currency: response.totals.currency });
-    }
+      const nextState: Partial<ReceiptSessionStore> = {
+        finalizing: false,
+        finalized: response,
+        finalizeError: undefined,
+        lastFinishPayload: {
+          sessionId: response.sessionId,
+          sessionName: response.sessionName,
+          participants,
+          totalsByParticipant: response.totals?.byParticipant,
+          totalsByItem: response.totals?.byItem,
+          allocations: response.allocations,
+          grandTotal: response.totals?.grandTotal,
+          currency: response.totals?.currency ?? currency,
+          status: response.status,
+          createdAt: response.createdAt,
+        },
+      };
 
-      set({ finalizing: false, finalized: response, finalizeError: undefined });
+      if (response.totals?.currency) {
+        nextState.currency = response.totals.currency;
+      }
+
+      set(nextState);
       return response;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to finalize session';

@@ -11,8 +11,8 @@ import {
   useReceiptSessionStore,
   CapturedReceiptImage,
 } from '@/features/receipt/model/receipt-session.store';
-
-const DEFAULT_LANGUAGE = 'en-US';
+import { useAppStore } from '@/shared/lib/stores/app-store';
+import { DEFAULT_LANGUAGE } from '@/shared/config/languages';
 
 const getDefaultSessionName = () => {
   const now = new Date();
@@ -45,12 +45,13 @@ export default function ScanReceiptScreen() {
   const storedCapture = useReceiptSessionStore((s) => s.capture);
   const setSessionNameStore = useReceiptSessionStore((s) => s.setSessionName);
   const storedSessionName = useReceiptSessionStore((s) => s.session?.sessionName);
+  const appLanguage = useAppStore((s) => s.language);
 
   const [sessionName, setSessionName] = useState(() => storedSessionName || getDefaultSessionName());
   const [isAutoName, setIsAutoName] = useState(() => !storedSessionName);
   const [localError, setLocalError] = useState<string | null>(null);
 
-  const language = DEFAULT_LANGUAGE;
+  const language = appLanguage || DEFAULT_LANGUAGE;
 
   useEffect(() => {
     if (isFocused && !perm?.granted) requestPerm();

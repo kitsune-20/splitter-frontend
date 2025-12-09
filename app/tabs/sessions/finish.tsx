@@ -4,22 +4,9 @@ import { YStack, XStack, Text, Button, Circle, ScrollView } from 'tamagui';
 import { Check } from '@tamagui/lucide-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { FinalizeTotalsByItem, FinalizeTotalsByParticipant, ReceiptAllocation } from '@/features/receipt/api/receipt.api';
+import { useReceiptSessionStore, type FinishPayload } from '@/features/receipt/model/receipt-session.store';
 
 type Participant = { uniqueId: string; username: string };
-
-type FinishPayload = {
-  sessionId?: number;
-  sessionName?: string;
-  receiptId?: string;
-  participants?: Participant[];
-  totals?: Record<string, number>;
-  totalsByParticipant?: FinalizeTotalsByParticipant[];
-  totalsByItem?: FinalizeTotalsByItem[];
-  allocations?: ReceiptAllocation[];
-  status?: string;
-  createdAt?: string;
-  grandTotal?: number;
-};
 
 type ParticipantAmount = { uniqueId: string; username: string; amount: number };
 type ItemSummary = {
@@ -37,25 +24,38 @@ const pickFirstNumber = (...values: Array<number | null | undefined>) => {
   }
   return 0;
 };
-const fmtUZS = (n: number) => `UZS ${Math.round(n).toLocaleString('en-US')}`;
+const fmtCurrency = (n: number, currency: string) => `${currency} ${Math.round(n).toLocaleString('en-US')}`;
 
-const getCurrencyParts = (n: number) => {
-  const [currency, ...rest] = fmtUZS(n).split(' ');
-  return { currency, amount: rest.join(' ') || '0' };
+const getCurrencyParts = (n: number, currency: string) => {
+  const formatted = fmtCurrency(n, currency);
+  const [cur, ...rest] = formatted.split(' ');
+  return { currency: cur, amount: rest.join(' ') || '0' };
 };
 
 export default function FinishScreen() {
   const { data } = useLocalSearchParams<{ data?: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const lastFinishPayload = useReceiptSessionStore((s) => s.lastFinishPayload);
 
   const payload = useMemo<FinishPayload | null>(() => {
-    try {
-      return data ? (JSON.parse(decodeURIComponent(data)) as FinishPayload) : null;
-    } catch {
-      return null;
+    if (data) {
+      try {
+        return data ? (JSON.parse(decodeURIComponent(data)) as FinishPayload) : null;
+      } catch (error) {
+        console.warn('[Finish] Failed to parse data param', {
+          error: error instanceof Error ? error.message : String(error),
+          sample: typeof data === 'string' ? data.slice(0, 200) : data,
+        });
+        try {
+          return JSON.parse(data) as FinishPayload;
+        } catch {
+          // ignore and fallback to store
+        }
+      }
     }
-  }, [data]);
+    return lastFinishPayload ?? null;
+  }, [data, lastFinishPayload]);
 
   const participants: Participant[] = payload?.participants ?? [];
   const totals: Record<string, number> = payload?.totals ?? {};
@@ -66,6 +66,7 @@ export default function FinishScreen() {
   const sessionName = payload?.sessionName;
   const status = payload?.status;
   const receiptId = payload?.receiptId;
+  const currency = payload?.currency || 'UZS';
 
   const { participantSummaries, itemSummaries, effectiveGrandTotal } = useMemo(() => {
     type RawParticipantTotal = FinalizeTotalsByParticipant & {
@@ -408,7 +409,7 @@ export default function FinishScreen() {
   }, [participants, totals, totalsByParticipantList, totalsByItemList, allocationsList, knownGrandTotal]);
 
   const showGrandTotal = participantSummaries.length > 0 || itemSummaries.length > 0;
-  const grandTotalParts = showGrandTotal ? getCurrencyParts(effectiveGrandTotal) : null;
+  const grandTotalParts = showGrandTotal ? getCurrencyParts(effectiveGrandTotal, currency) : null;
 
   const Avatar = ({ name }: { name: string }) => (
     <Circle size={32} bg="$gray5" ai="center" jc="center">
@@ -500,7 +501,7 @@ export default function FinishScreen() {
           </Text>
           {participantSummaries.length > 0 ? (
             participantSummaries.map((summary) => {
-              const parts = getCurrencyParts(summary.amount);
+              const parts = getCurrencyParts(summary.amount, currency);
 
               return (
                 <XStack
@@ -545,7 +546,7 @@ export default function FinishScreen() {
               Split by item:
             </Text>
             {itemSummaries.map((item) => {
-              const itemParts = getCurrencyParts(item.total);
+              const itemParts = getCurrencyParts(item.total, currency);
               return (
                 <YStack
                   key={item.itemId}
@@ -572,7 +573,7 @@ export default function FinishScreen() {
                   {item.allocations.length > 0 ? (
                     <YStack gap="$1">
                       {item.allocations.map((allocation) => {
-                        const allocationParts = getCurrencyParts(allocation.amount);
+                        const allocationParts = getCurrencyParts(allocation.amount, currency);
                         return (
                           <XStack
                             key={`${item.itemId}-${allocation.uniqueId}`}

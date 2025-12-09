@@ -12,7 +12,8 @@ import type {
   SessionHistoryTotalsByParticipant,
 } from '@/features/sessions/api/history.api';
 
-const fmtUZS = (value: number) => `UZS ${value.toLocaleString()}`;
+const DEFAULT_CURRENCY = 'UZS';
+const fmtCurrency = (value: number, currency: string) => `${currency} ${value.toLocaleString()}`;
 const BULLET = '\u2022';
 const DETAIL_LIMIT = 50;
 
@@ -109,6 +110,11 @@ export default function HistoryDetailsScreen() {
   }, [initialized, loading, currentLimit, fetchHistory, bill]);
 
   const participants = useMemo(() => buildParticipantsView(bill), [bill]);
+  const currency =
+    bill?.currency ||
+    bill?.totals?.currency ||
+    bill?.payload?.totals?.currency ||
+    DEFAULT_CURRENCY;
 
   if (!bill && loading) {
     return (
@@ -147,7 +153,7 @@ export default function HistoryDetailsScreen() {
             {`${formatSessionDate(bill.finalizedAt || bill.createdAt)} ${BULLET} ${(bill.participants ?? []).length} ishtirokchi`}
           </Text>
           <Text fontSize={16} fontWeight="700" color="#2ECC71">
-            {fmtUZS(bill.grandTotal ?? 0)}
+            {fmtCurrency(bill.grandTotal ?? 0, currency)}
           </Text>
         </YStack>
 
@@ -175,7 +181,7 @@ export default function HistoryDetailsScreen() {
                 <Text fontSize={16} fontWeight="600">{participant.username}</Text>
               </XStack>
               <Text fontSize={16} fontWeight="700" color="#2ECC71">
-                {fmtUZS(amount)}
+                {fmtCurrency(amount, currency)}
               </Text>
             </XStack>
 
@@ -185,7 +191,7 @@ export default function HistoryDetailsScreen() {
                   <XStack key={item.id} jc="space-between" ai="center">
                     <Text fontSize={14}>{item.title}</Text>
                     <Text fontSize={14} fontWeight="600" color="#2ECC71">
-                      {fmtUZS(item.price)}
+                      {item.price.toLocaleString()}
                     </Text>
                   </XStack>
                 ))

@@ -8,7 +8,7 @@ import { Users as UsersIcon, Check, Plus, Minus, Package as PackageIcon } from '
 
 import { useAppStore } from '@/shared/lib/stores/app-store';
 import { useReceiptSessionStore } from '@/features/receipt/model/receipt-session.store';
-import type { ReceiptSplitItem } from '@/features/receipt/model/receipt-session.store';
+import type { FinishPayload, ReceiptSplitItem } from '@/features/receipt/model/receipt-session.store';
 import { ReceiptApi } from '@/features/receipt/api/receipt.api';
 import type { FinalizeReceiptItemPayload, FinalizeTotalsByItem, FinalizeTotalsByParticipant, ReceiptAllocation } from '@/features/receipt/api/receipt.api';
 
@@ -241,6 +241,7 @@ export default function ItemsSplitScreen() {
   const storeItems = useReceiptSessionStore((s) => s.items);
   const storeParticipants = useReceiptSessionStore((s) => s.participants);
   const setStoreItems = useReceiptSessionStore((s) => s.setItems);
+  const setLastFinishPayload = useReceiptSessionStore((s) => s.setLastFinishPayload);
 
   const storeCurrency = useReceiptSessionStore((s) => s.currency);
 
@@ -335,6 +336,7 @@ export default function ItemsSplitScreen() {
 
   const commitItems = useCallback(
     (updater: (prev: Item[]) => Item[]) => {
+      let nextForStore: Item[] | null = null;
       setLocalItems((prev) => {
         const next = updater(prev);
         const changed =
@@ -342,24 +344,38 @@ export default function ItemsSplitScreen() {
         if (!changed) {
           return prev;
         }
-        setStoreItems(toStoreItems(next));
+        nextForStore = next;
         return next;
       });
+      if (nextForStore) {
+        setStoreItems(toStoreItems(nextForStore));
+      }
     },
     [setStoreItems]
   );
 
   // --- derived ---
-  const isAssigned = (it: Item) => {
-    if (it.splitMode === 'count') {
-      const c = it.perPersonCount || {};
-      return Object.values(c).reduce((a, b) => a + (b || 0), 0) > 0;
+  const countAssignedUnits = (it: Item) =>
+    Object.values(it.perPersonCount || {}).reduce((a, b) => a + (b || 0), 0);
+
+  const isPartiallyAssigned = (it: Item) => {
+    if (ensureMode(it) === 'count') {
+      return countAssignedUnits(it) > 0;
+    }
+    return (it.assignedTo?.length ?? 0) > 0;
+  };
+
+  const isFullyAssigned = (it: Item) => {
+    if (ensureMode(it) === 'count') {
+      const units = countAssignedUnits(it);
+      const required = Math.max(1, it.quantity || 0);
+      return units >= required;
     }
     return (it.assignedTo?.length ?? 0) > 0;
   };
 
   const assignedCount = useMemo(
-    () => items.reduce((acc, it) => acc + (isAssigned(it) ? 1 : 0), 0),
+    () => items.reduce((acc, it) => acc + (isFullyAssigned(it) ? 1 : 0), 0),
     [items]
   );
 
@@ -653,7 +669,7 @@ export default function ItemsSplitScreen() {
 
       const finalCurrency = result.totals?.currency || storeCurrency;
 
-      const finishPayload = {
+      const finishPayload: FinishPayload = {
   sessionId: result.sessionId,
   sessionName: result.sessionName,
   receiptId: sessionReceiptId ?? (isMockSession ? 'mock-001' : undefined),
@@ -667,6 +683,7 @@ export default function ItemsSplitScreen() {
   createdAt: result.createdAt,
 };
 
+      setLastFinishPayload(finishPayload);
       setShowSuccess(true);
 
       setTimeout(() => {
@@ -703,6 +720,7 @@ export default function ItemsSplitScreen() {
     participants,
     storeCurrency,
     setStoreItems,
+    setLastFinishPayload,
     router,
     resetState,
   ]);
@@ -814,7 +832,7 @@ export default function ItemsSplitScreen() {
             {items.map((it) => {
               const total =
                 typeof it.totalPrice === 'number' ? it.totalPrice : it.price * it.quantity;
-              const assigned = isAssigned(it);
+              const assigned = isPartiallyAssigned(it);
               const singleOwner = it.splitMode !== 'count' && it.assignedTo.length === 1;
               const ownerName = singleOwner
                 ? participants.find((p) => p.uniqueId === it.assignedTo[0])?.username
@@ -822,8 +840,13 @@ export default function ItemsSplitScreen() {
               const priceParts = getCurrencyParts(total);
               const assignedUnits =
                 it.splitMode === 'count'
-                  ? Object.values(it.perPersonCount || {}).reduce((a, b) => a + (b || 0), 0)
+                  ? countAssignedUnits(it)
                   : 0;
+              const missingUnits =
+                it.splitMode === 'count'
+                  ? Math.max(0, (it.quantity || 0) - assignedUnits)
+                  : 0;
+              const isCountAndMissing = it.splitMode === 'count' && missingUnits > 0;
 
               let summaryText = '';
               if (it.splitMode === 'count') {
@@ -841,7 +864,9 @@ export default function ItemsSplitScreen() {
                   key={it.id}
                   w="100%"
                   borderWidth={1}
-                  borderColor={assigned ? '#2ECC71' : '#E4E7EB'}
+                  borderColor={
+                    isCountAndMissing ? '#E74C3C' : assigned ? '#2ECC71' : '#E4E7EB'
+                  }
                   borderRadius={12}
                   bg="$color1"
                 >
@@ -858,6 +883,11 @@ export default function ItemsSplitScreen() {
                             {summaryText}
                           </Text>
                         </XStack>
+                      )}
+                      {isCountAndMissing && (
+                        <Text fontSize={12} color="#E74C3C">
+                          Assign remaining {missingUnits} unit{missingUnits === 1 ? '' : 's'}
+                        </Text>
                       )}
                     </YStack>
 

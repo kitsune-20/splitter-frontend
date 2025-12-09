@@ -9,6 +9,7 @@ import type { SessionHistoryEntry, SessionHistoryParticipantLight } from '@/feat
 
 const BULLET = '\u2022';
 const HISTORY_LIMIT = 50;
+const DEFAULT_CURRENCY = 'UZS';
 
 const formatSessionDate = (value?: string) => {
   if (!value) return '';
@@ -60,13 +61,13 @@ function AvatarGroup({ participants }: { participants: SessionHistoryParticipant
 function HistoryCard({
   title,
   summary,
-  amount,
+  amountLabel,
   participants,
   onPress,
 }: {
   title: string;
   summary: string;
-  amount: number;
+  amountLabel: string;
   participants: SessionHistoryParticipantLight[];
   onPress: () => void;
 }) {
@@ -93,7 +94,7 @@ function HistoryCard({
             </Text>
           </YStack>
           <Text fontSize={14} lineHeight={22} fontWeight="700" color="#2ECC71">
-            UZS {amount.toLocaleString()}
+            {amountLabel}
           </Text>
         </XStack>
 
@@ -173,12 +174,14 @@ export default function SessionsHistoryScreen() {
           const dateForSummary = bill.finalizedAt || bill.createdAt;
           const summary = `${formatSessionDate(dateForSummary)} ${BULLET} ${participants.length} ishtirokchi`;
           const totalAmount = bill.grandTotal ?? 0;
+          const currency = bill.currency || bill.totals?.currency || bill.payload?.totals?.currency || DEFAULT_CURRENCY;
+          const amountLabel = `${currency} ${totalAmount.toLocaleString()}`;
           return (
             <HistoryCard
               key={bill.sessionId}
               title={bill.sessionName || 'Hisob'}
               summary={summary}
-              amount={totalAmount}
+              amountLabel={amountLabel}
               participants={participants}
               onPress={() =>
                 router.push({
