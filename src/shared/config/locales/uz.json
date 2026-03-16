@@ -43,6 +43,17 @@
     "continue": "Davom etish",
     "back": "Orqaga"
   },
+  "friends": {
+  "title": "Do‘stlar",
+  "requests": "So‘rovlar",
+  "add": "Do‘st qo‘shish",
+  "empty": "Hozircha do‘stlar yo‘q. Qo‘shish uchun + tugmasini bosing.",
+  "searchPlaceholder": "UniqueId kiriting, masalan USER#1234",
+  "send": "So‘rov yuborish",
+  "remove": "O‘chirish",
+  "loading": "Yuklanmoqda...",
+  "error": "Yuklab bo‘lmadi"
+},
   "home": {
     "header": {
       "greeting": "Salom, {{name}}!",
@@ -155,7 +166,9 @@
     "groups": {
       "title": "Guruhlar",
       "create": "Yangi guruh",
-      "details": "Guruh"
+      "details": "Guruh",
+      "backToGroups": "Guruhlarga qaytish",
+      "add": "Guruh hali yoq. Yaratish uchun + bosing"
     },
     "scanInvite": "Taklifni skanerlash",
     "friendQr": "Do'st QR kodi",
@@ -174,7 +187,8 @@
       "options": {
         "en": "Ingliz tili",
         "ja": "Yapon tili",
-        "uz": "O'zbek tili"
+        "uz": "O'zbek tili",
+        "ru": "Rus tili"
       }
     }
   }

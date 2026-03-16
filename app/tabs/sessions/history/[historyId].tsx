@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { YStack, XStack, Text, ScrollView, Button } from 'tamagui';
+import { useTranslation } from 'react-i18next';
 
 import UserAvatar from '@/shared/ui/UserAvatar';
 import { useSessionsHistoryStore } from '@/features/sessions/model/history.store';
@@ -13,15 +14,16 @@ import type {
 } from '@/features/sessions/api/history.api';
 
 const DEFAULT_CURRENCY = 'UZS';
-const fmtCurrency = (value: number, currency: string) => `${currency} ${value.toLocaleString()}`;
+const fmtCurrency = (value: number, currency: string, locale: string = 'en') =>
+  `${currency} ${value.toLocaleString(locale)}`;
 const BULLET = '\u2022';
 const DETAIL_LIMIT = 50;
 
-const formatSessionDate = (value?: string) => {
+const formatSessionDate = (value?: string, locale: string = 'en') => {
   if (!value) return '';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString('uz-UZ', {
+  return date.toLocaleString(locale, {
     day: '2-digit',
     month: 'short',
     hour: '2-digit',
@@ -87,6 +89,7 @@ const buildParticipantsView = (bill?: SessionHistoryEntry): ParticipantView[] =>
 export default function HistoryDetailsScreen() {
   const { historyId } = useLocalSearchParams<{ historyId: string }>();
   const router = useRouter();
+  const { t, i18n } = useTranslation();
   const sessions = useSessionsHistoryStore(state => state.sessions);
   const loading = useSessionsHistoryStore(state => state.loading);
   const initialized = useSessionsHistoryStore(state => state.initialized);
@@ -119,7 +122,7 @@ export default function HistoryDetailsScreen() {
   if (!bill && loading) {
     return (
       <YStack f={1} bg="$background" ai="center" jc="center">
-        <Text fontSize={16}>Yuklanmoqda...</Text>
+        <Text fontSize={16}>{t('common.loading', 'Loading...')}</Text>
       </YStack>
     );
   }
@@ -127,13 +130,17 @@ export default function HistoryDetailsScreen() {
   if (!bill) {
     return (
       <YStack f={1} bg="$background" ai="center" jc="center" gap="$3">
-        <Text fontSize={16} fontWeight="600">History not found</Text>
+        <Text fontSize={16} fontWeight="600">
+          {t('navigation.historyDetails', 'Bill details')}
+        </Text>
         {error && (
           <Text fontSize={14} color="$red10">
             {error}
           </Text>
         )}
-        <Button onPress={() => router.back()}>Go back</Button>
+        <Button onPress={() => router.back()}>
+          {t('common.back', 'Back')}
+        </Button>
       </YStack>
     );
   }
@@ -145,15 +152,22 @@ export default function HistoryDetailsScreen() {
         contentContainerStyle={{ alignItems: 'center', paddingBottom: 32, gap: 16 }}
       >
         <YStack w={358} gap="$3">
-          <Text fontSize={24} fontWeight="700">{bill.sessionName || 'Hisob'}</Text>
+          <Text fontSize={24} fontWeight="700">
+            {bill.sessionName || t('home.recent.fallbackName', 'Bill')}
+          </Text>
           <Button unstyled alignSelf="flex-start" onPress={() => router.back()}>
-            <Text color="#2ECC71">{'< Ortga'}</Text>
+            <Text color="#2ECC71">{t('common.back', 'Back')}</Text>
           </Button>
           <Text fontSize={14} color="$gray10">
-            {`${formatSessionDate(bill.finalizedAt || bill.createdAt)} ${BULLET} ${(bill.participants ?? []).length} ishtirokchi`}
+            {`${formatSessionDate(
+              bill.finalizedAt || bill.createdAt,
+              i18n.language,
+            )} ${BULLET} ${t('home.recent.participants', {
+              count: (bill.participants ?? []).length,
+            })}`}
           </Text>
           <Text fontSize={16} fontWeight="700" color="#2ECC71">
-            {fmtCurrency(bill.grandTotal ?? 0, currency)}
+            {fmtCurrency(bill.grandTotal ?? 0, currency, i18n.language)}
           </Text>
         </YStack>
 
@@ -191,13 +205,13 @@ export default function HistoryDetailsScreen() {
                   <XStack key={item.id} jc="space-between" ai="center">
                     <Text fontSize={14}>{item.title}</Text>
                     <Text fontSize={14} fontWeight="600" color="#2ECC71">
-                      {item.price.toLocaleString()}
+                      {item.price.toLocaleString(i18n.language ?? 'en')}
                     </Text>
                   </XStack>
                 ))
               ) : (
                 <Text fontSize={12} color="$gray9">
-                  Hech qanday element biriktirilmagan
+                  {t('home.recent.empty', 'No bills yet')}
                 </Text>
               )}
             </YStack>

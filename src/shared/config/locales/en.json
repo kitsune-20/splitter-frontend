@@ -168,7 +168,9 @@
     "groups": {
       "title": "Groups",
       "create": "New group",
-      "details": "Group"
+      "details": "Group",
+      "backToGroups": "Назад к группам",
+      "add":"No groups yet. Tap + to create."
     },
     "scanInvite": "Scan Invite",
     "friendQr": "My Friend QR",
@@ -177,7 +179,7 @@
     "participants": "Participants",
     "itemsSplit": "Items Split",
     "finish": "Finish",
-    "history": "Recent bills",
+    "history": "History",
     "historyDetails": "Bill details"
   },
   "settings": {
@@ -187,7 +189,8 @@
       "options": {
         "en": "English",
         "ja": "Japanese",
-        "uz": "Uzbek"
+        "uz": "Uzbek",
+        "ru": "Russian"
       }
     }
   }

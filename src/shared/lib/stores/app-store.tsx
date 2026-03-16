@@ -5,6 +5,7 @@ import { getCurrentUser } from '@/features/auth/api';
 import { getToken, removeToken } from '../utils/token-storage';
 import type { LanguageCode } from '@/shared/config/languages';
 import { DEFAULT_LANGUAGE } from '@/shared/config/languages';
+import i18n from '@/shared/config/i18n';
 
 export interface User {
   id: number;
@@ -21,7 +22,6 @@ interface AppStore {
   isLoading: boolean;
   
   // App settings
-  theme: 'light' | 'dark';
   language: LanguageCode;
   
   // Actions
@@ -30,7 +30,6 @@ interface AppStore {
   setAuth: (token: string, user: User) => void;
   logout: () => Promise<void>;
   initializeAuth: () => Promise<void>;
-  setTheme: (theme: 'light' | 'dark') => void;
   setLanguage: (language: LanguageCode) => void;
 }
 
@@ -41,7 +40,6 @@ export const useAppStore = create<AppStore>()(
       token: null,
       user: null,
       isLoading: false,
-      theme: 'light',
       language: DEFAULT_LANGUAGE,
 
       // Auth actions
@@ -98,14 +96,19 @@ export const useAppStore = create<AppStore>()(
       },
 
       // App settings actions
-      setTheme: (theme) => set({ theme }),
-      setLanguage: (language) => set({ language }),
+      setLanguage: (language) => {
+        set({ language });
+        // Синхронизируем выбранный язык с i18next,
+        // чтобы все t(...) сразу переключались
+        i18n.changeLanguage(language).catch((error) => {
+          console.warn('Failed to change i18n language', error);
+        });
+      },
     }),
     {
       name: 'app-store',
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => ({
-        theme: state.theme,
         language: state.language,
         // Не сохраняем токен и пользователя в AsyncStorage, 
         // так как токен сохраняется отдельно в SecureStore
@@ -123,6 +126,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const initializeAuth = useAppStore((s) => s.initializeAuth);
   const logout = useAppStore((s) => s.logout);
   const router = useRouter();
+  const language = useAppStore((s) => s.language);
   
   useEffect(() => {
     initializeAuth();
@@ -135,6 +139,12 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     });
     return unsubscribe;
   }, [logout, router]);
+
+  // При старте приложения и при смене language в сторе
+  // гарантируем, что i18n использует тот же язык
+  useEffect(() => {
+    i18n.changeLanguage(language).catch(() => {});
+  }, [language]);
   
   return <>{children}</>;
 }
