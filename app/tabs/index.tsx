@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useCallback } from 'react';
 import { Pressable } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, Redirect } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { YStack, XStack, Text, View, Circle } from 'tamagui';
 import { ScanLine, Users, UserPlus, RefreshCw } from '@tamagui/lucide-icons';
@@ -194,6 +194,9 @@ export default function HomePage() {
   const openAllSessions = () => router.push('/tabs/sessions/history');
 
   const recent = useMemo<SessionHistoryEntry[]>(() => sessions.slice(0, 3), [sessions]);
+
+  // Главная страница больше не нужна — сразу уводим в сканер
+  return <Redirect href="/tabs/scan-receipt" />;
 
   return (
     <ScreenContainer>
