@@ -27,6 +27,25 @@ type Item = {
   totalPrice?: number;
 };
 
+const EXCHANGE_RATES: Record<string, number> = {
+  USD: 1,
+  JPY: 150,
+  UZS: 12500,
+  RUB: 90,
+};
+
+const convertBetween = (
+  amount: number,
+  from: string,
+  to: string,
+  rates: Record<string, number> = EXCHANGE_RATES,
+) => {
+  if (!amount || from === to) return amount;
+  const fromRate = rates[from] || 1;
+  const toRate = rates[to] || 1;
+  return (amount / fromRate) * toRate;
+};
+
 // ===== Mock Data =====
 const MOCK_ITEMS: Item[] = [
   {
@@ -134,7 +153,13 @@ const toStoreItems = (source: Item[]): ReceiptSplitItem[] =>
 const computeItemTotal = (item: Item) =>
   typeof item.totalPrice === 'number' ? item.totalPrice : item.price * item.quantity;
 
-const buildLocalFinalization = (items: Item[], participants: Participant[]) => {
+const buildLocalFinalization = (
+  items: Item[],
+  participants: Participant[],
+  tipPercent: number,
+  baseCurrency: string,
+  targetCurrency: string,
+) => {
   const totalsByItem: FinalizeTotalsByItem[] = [];
   const allocations: ReceiptAllocation[] = [];
 
@@ -143,8 +168,12 @@ const buildLocalFinalization = (items: Item[], participants: Participant[]) => {
     return acc;
   }, {});
 
+  const tipMultiplier = 1 + tipPercent / 100;
+
   for (const item of items) {
-    const total = computeItemTotal(item);
+    const basePrice = convertBetween(item.price, baseCurrency, targetCurrency);
+    const unitPrice = basePrice * tipMultiplier;
+    const total = unitPrice * (item.quantity || 1);
     totalsByItem.push({ itemId: item.id, name: item.name, total });
 
     const mode = ensureMode(item);
@@ -155,7 +184,7 @@ const buildLocalFinalization = (items: Item[], participants: Participant[]) => {
         const count = Number(rawCount);
         if (!uid || Number.isNaN(count) || count <= 0) continue;
 
-        const shareAmount = count * item.price;
+        const shareAmount = count * unitPrice;
         if (!(uid in participantTotals)) {
           participantTotals[uid] = 0;
         }
@@ -197,20 +226,18 @@ const buildLocalFinalization = (items: Item[], participants: Participant[]) => {
     });
   }
 
-  const totalsByParticipant: FinalizeTotalsByParticipant[] = participants.map((participant) => ({
-    uniqueId: participant.uniqueId,
-    username: participant.username,
-    amountOwed: participantTotals[participant.uniqueId] ?? 0,
-  }));
-
-  const grandTotal = totalsByItem.reduce((acc, entry) => acc + entry.total, 0);
-
   return {
-    totalsMap: participantTotals,
-    totalsByParticipant,
-    totalsByItem,
     allocations,
-    grandTotal,
+    totalsByItem,
+    totalsByParticipant: participants.map((p) => ({
+      uniqueId: p.uniqueId,
+      username: p.username,
+      amountOwed: participantTotals[p.uniqueId] ?? 0,
+    })),
+    totalsMap: participantTotals,
+    grandTotal: Number(
+      totalsByItem.reduce((acc, entry) => acc + entry.total, 0).toFixed(2)
+    ),
   };
 };
 // ===== Helpers =====
@@ -229,6 +256,16 @@ const parseParticipantsParam = (raw?: string): Participant[] => {
 };
 
 export default function ItemsSplitScreen() {
+  const [tipPercent, setTipPercent] = useState(0);
+  const [currency, setCurrency] = useState("USD");
+
+  const currencySymbols: Record<string, string> = {
+    USD: "$",
+    JPY: "¥",
+    UZS: "so'm",
+    RUB: "₽",
+  };
+
   const { participants: participantsParam, receiptId } = useLocalSearchParams<{
     participants?: string;
     receiptId?: string;
@@ -245,18 +282,32 @@ export default function ItemsSplitScreen() {
 
   const storeCurrency = useReceiptSessionStore((s) => s.currency);
 
+  const baseCurrency = storeCurrency || "USD";
+
+  useEffect(() => {
+    if (storeCurrency && currency === "USD") {
+      setCurrency(storeCurrency);
+    }
+  }, [storeCurrency, currency]);
+
   const fmtCurrency = useCallback((n: number) => {
-    const currency = storeCurrency || 'UZS';
-    return `${currency} ${Math.round(n).toLocaleString('en-US')}`;
-  }, [storeCurrency]);
+    const converted = convertBetween(n, baseCurrency, currency);
+    const symbol = currencySymbols[currency] || currency;
+    return `${converted.toFixed(2)} ${symbol}`;
+  }, [currency, baseCurrency]);
 
   const getCurrencyParts = useCallback((n: number) => {
     const formatted = fmtCurrency(n);
-    const [currency, ...rest] = formatted.split(' ');
-    return { currency, amount: rest.join(' ') || '0' };
+    // our fmtCurrency produces "amount symbol"; treat everything as amount
+    return { currency: '', amount: formatted };
   }, [fmtCurrency]);
 
   const [items, setLocalItems] = useState<Item[]>([]);
+
+  // derived totals for UI
+  const subtotal = useMemo(() => items.reduce((acc, it) => acc + computeItemTotal(it), 0), [items]);
+  const tipAmountCalc = subtotal * (tipPercent / 100);
+  const totalAmount = subtotal + tipAmountCalc;
 
   type Editing = {
     id: string;
@@ -597,11 +648,13 @@ export default function ItemsSplitScreen() {
 
     const finalizeItems: FinalizeReceiptItemPayload[] = items.map((item) => {
       const mode = ensureMode(item);
+      const basePrice = convertBetween(item.price, baseCurrency, currency);
+      const priceWithTip = basePrice * (1 + tipPercent / 100);
 
       const payload: FinalizeReceiptItemPayload = {
         id: item.id,
         name: item.name,
-        price: item.price,
+        price: priceWithTip,
         quantity: item.quantity,
         kind: item.kind,
         splitMode: mode,
@@ -629,9 +682,15 @@ export default function ItemsSplitScreen() {
       throw new Error('Session ID is required');
     }
 
-      const fallbackFinalization = buildLocalFinalization(items, participants);
+    const fallbackFinalization = buildLocalFinalization(
+      items,
+      participants,
+      tipPercent,
+      baseCurrency,
+      currency,
+    );
 
-      const result = await ReceiptApi.finalize({
+    const result = await ReceiptApi.finalize({
       sessionId: effectiveSessionId,
       sessionName: session?.sessionName || 'Split Session',
       participants: participants.map((p) => ({
@@ -639,7 +698,7 @@ export default function ItemsSplitScreen() {
         username: p.username,
       })),
       items: finalizeItems,
-      currency: storeCurrency, // ✅ Добавьте эту строку
+      currency: currency, // use selected currency
     });
 
       const backendByParticipant = result.totals?.byParticipant ?? [];
@@ -774,19 +833,8 @@ export default function ItemsSplitScreen() {
 
   return (
     <YStack f={1} bg="$background" position="relative">
-      {/* Header */}
-      <YStack bg="$background" p="$4" pb="$2">
-        <XStack w="100%" ai="center" jc="flex-start" mb="$3">
-          <YStack ai="flex-start">
-            <Text fontSize={16} fontWeight="700">
-              Orders
-            </Text>
-            <Text fontSize={12} color="$gray10">
-              {sessionReceiptId ?? (isMockSession ? 'mock-001' : 'N/A')}
-            </Text>
-          </YStack>
-        </XStack>
-      </YStack>
+      {/* header cleared */}
+      <YStack bg="$background" p="$4" pb="$2" />
 
       {/* Content */}
       <ScrollView
@@ -870,7 +918,7 @@ export default function ItemsSplitScreen() {
                   borderRadius={12}
                   bg="$color1"
                 >
-                  <XStack w="100%" ai="center" jc="space-between" px={16} py="$3" gap="$3">
+                  <XStack w="100%" ai="center" jc="space-between" px="$3" py="$2" gap="$2">
                     <YStack f={1} pr={12} gap="$1">
                       <Text fontSize={16} fontWeight="700" numberOfLines={1}>
                         {it.name}
@@ -897,7 +945,7 @@ export default function ItemsSplitScreen() {
                           {priceParts.currency}
                         </Text>
                         <Text fontSize={16} fontWeight="700" color="#2ECC71">
-                          {priceParts.amount}
+                          {fmtCurrency(it.price)}
                         </Text>
                       </XStack>
 
@@ -929,6 +977,31 @@ export default function ItemsSplitScreen() {
               );
             })}
           </YStack>
+
+          {/* currency & totals below products */}
+          <YStack px="$4" mt="$4" space="$2">
+            <XStack gap="$2" justifyContent="flex-end">
+              {['USD', 'JPY', 'RUB', 'UZS'].map((cur) => (
+                <Button
+                  key={cur}
+                  unstyled
+                  onPress={() => setCurrency(cur)}
+                  bg={currency === cur ? '#2ECC71' : '$backgroundPress'}
+                  px="$3"
+                  py="$2"
+                  borderRadius={6}
+                >
+                  <Text color={currency === cur ? 'white' : '$gray11'} fontWeight="600">
+                    {cur}
+                  </Text>
+                </Button>
+              ))}
+            </XStack>
+            <Text fontSize={14}>Subtotal: {fmtCurrency(subtotal)}</Text>
+            <Text fontSize={14}>Tip ({tipPercent}%): {fmtCurrency(tipAmountCalc)}</Text>
+            <Text fontSize={14} fontWeight="700">Total: {fmtCurrency(totalAmount)}</Text>
+          </YStack>
+
         </YStack>
       </ScrollView>
 
@@ -940,6 +1013,30 @@ export default function ItemsSplitScreen() {
         bottom={(insets?.bottom ?? 0) + 8}
         px="$4"
       >
+        {/* Tip selector */}
+        <YStack mt="$3" px="$4" mb="$3">
+          <Text fontWeight="600" mb="$2">Tip (%)</Text>
+          <XStack gap="$2">
+            {[0, 5, 10, 15].map((value) => (
+              <Button
+                key={value}
+                unstyled
+                onPress={() => setTipPercent(value)}
+                bg={tipPercent === value ? "#2ECC71" : "$backgroundPress"}
+                px="$3"
+                py="$2"
+                borderRadius={6}
+                ai="center"
+                jc="center"
+              >
+                <Text color={tipPercent === value ? "white" : "$gray11"} fontWeight="600">
+                  {value}%
+                </Text>
+              </Button>
+            ))}
+          </XStack>
+        </YStack>
+
         {!canContinue ? (
           <YStack p="$3" borderWidth={1} borderColor="$gray5" borderRadius={12} bg="$color1">
             <XStack w="100%" ai="center" jc="space-between" mb="$2">
