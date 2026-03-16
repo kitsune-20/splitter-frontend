@@ -2,9 +2,10 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Image, StyleSheet, View } from 'react-native';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { YStack, XStack, Button, Paragraph, Input, Text, Spinner } from 'tamagui';
-import { ChevronLeft, AlertTriangle, Camera as CameraIcon } from '@tamagui/lucide-icons';
+import { AlertTriangle, Camera as CameraIcon } from '@tamagui/lucide-icons';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 
 import {
@@ -136,6 +137,63 @@ export default function ScanReceiptScreen() {
     }
   }, [cameraRef, parsing, sessionName, setSessionNameStore, setCapture, parseReceipt, language, router]);
 
+  const handlePickFromGallery = useCallback(async () => {
+    if (parsing) return;
+
+    try {
+      setLocalError(null);
+
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        throw new Error('Permission to access media library is required.');
+      }
+
+      const pickResult = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.7,
+        base64: false,
+      });
+
+      if (pickResult.canceled) return;
+
+      const uri = (pickResult as any).uri || pickResult.assets?.[0]?.uri;
+      if (!uri) throw new Error('Could not read selected image.');
+
+      const manipResult = await manipulateAsync(
+        uri,
+        [{ resize: { width: 1280 } }],
+        { compress: 0.45, format: SaveFormat.JPEG, base64: true }
+      );
+
+      if (!manipResult?.base64) {
+        throw new Error('Failed to prepare the image for upload.');
+      }
+
+      const preparedName = sessionName.trim() || getDefaultSessionName();
+      const capture: CapturedReceiptImage = {
+        uri: manipResult.uri ?? uri,
+        base64: manipResult.base64,
+        mimeType: guessMime(manipResult.uri ?? uri),
+        width: manipResult.width,
+        height: manipResult.height,
+      };
+
+      setSessionNameStore(preparedName);
+      setCapture(capture);
+
+      await parseReceipt({
+        sessionName: preparedName,
+        language,
+        image: { data: capture.base64, mimeType: capture.mimeType },
+      });
+
+      router.push('/tabs/sessions/participants');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Something went wrong while uploading the receipt';
+      setLocalError(message);
+    }
+  }, [parsing, sessionName, setSessionNameStore, setCapture, parseReceipt, language, router]);
+
   const useMock = useCallback(() => {
     router.push({
       pathname: '/tabs/sessions/participants',
@@ -143,32 +201,20 @@ export default function ScanReceiptScreen() {
     } as never);
   }, [router]);
 
-  const goBack = useCallback(() => {
-    router.back();
-  }, [router]);
-
   const handleSessionNameChange = useCallback((value: string) => {
     setIsAutoName(false);
     setSessionName(value);
   }, [setIsAutoName, setSessionName]);
 
-  const disableAction = parsing || !perm?.granted;
+  const disableScan = parsing || !perm?.granted;
+  const disableUpload = parsing;
   const errorMessage = localError || parseError;
 
   return (
     <View style={S.root}>
       <View style={S.headerAbs}>
         <XStack ai="center" jc="space-between" px="$3" py="$2">
-          <Button
-            size="$2"
-            h={28}
-            chromeless
-            onPress={goBack}
-            icon={<ChevronLeft size={18} color="white" />}
-            color="white"
-          >
-            Back
-          </Button>
+          <YStack w={54} />
           <Paragraph fow="700" fos="$6" col="white">Scan receipt</Paragraph>
           <YStack w={54} />
         </XStack>
@@ -239,22 +285,21 @@ export default function ScanReceiptScreen() {
             <Button
               size="$3"
               borderRadius="$3"
-              theme="gray"
-              onPress={goBack}
-              disabled={parsing}
-              opacity={parsing ? 0.6 : 1}
+              theme="active"
+              onPress={handleParse}
+              disabled={disableScan}
+              icon={parsing ? undefined : <CameraIcon size={18} color="white" />}
             >
-              Cancel
+              {parsing ? 'Processing...' : 'Scan receipt'}
             </Button>
             <Button
               size="$3"
               borderRadius="$3"
-              theme="active"
-              onPress={handleParse}
-              disabled={disableAction}
-              icon={parsing ? undefined : <CameraIcon size={18} color="white" />}
+              theme="gray"
+              onPress={handlePickFromGallery}
+              disabled={disableUpload}
             >
-              {parsing ? 'Processing...' : 'Scan receipt'}
+              Upload photo
             </Button>
           </XStack>
 
